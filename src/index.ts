@@ -167,7 +167,7 @@ class TavilyClient {
       const tools: Tool[] = [
         {
           name: "tavily_search",
-          description: "Fallback Tavily web search.  Do not use as the default search tool.  Use the local web_search tool first for normal current information and source discovery.  Use tavily_search only if web_search fails, times out, returns an error, or the user explicitly asks to search with Tavily.  Returns snippets and source URLs.",
+          description: "Fallback Tavily web search.  Do not use as the default search tool.  Always use local web_search first for normal current information and source discovery.  Use tavily_search only when web_search fails, times out, returns an error, or when the user explicitly asks to use Tavily search.  Use tavily_search when Tavily-specific search controls are needed, such as advanced search depth, exact phrase matching, date ranges, country targeting, include/exclude domains, images, or raw-content search results.  For full page content from known URLs, prefer tavily_extract instead.  Returns snippets and source URLs.",
           inputSchema: {
             type: "object",
             properties: {
@@ -256,7 +256,7 @@ class TavilyClient {
         },
         {
           name: "tavily_extract",
-          description: "Extract content from specific URLs.  Use after web_search has found candidate URLs when snippets are not enough and full page content or exact source wording is needed.  Accepts a list of URLs and returns raw page content in markdown or text format.",
+          description: "Extract content from specific URLs.  Use after web_search has found candidate URLs when snippets are not enough and full page content or exact source wording is needed.  Prefer this over tavily_search when the URLs are already known.  Accepts a list of URLs and returns raw page content in markdown or text format.",
           inputSchema: {
             type: "object",
             properties: {
@@ -861,11 +861,11 @@ function listTools(): void {
   const tools = [
     {
       name: "tavily_search",
-      description: "Fallback Tavily web search.  Do not use as the default search tool.  Use the local web_search tool first for normal current information and source discovery.  Use tavily_search only if web_search fails, times out, returns an error, or the user explicitly asks to search with Tavily.  Returns snippets and source URLs."
+      description: "Fallback Tavily web search.  Do not use as the default search tool.  Always use local web_search first for normal current information and source discovery.  Use tavily_search only when web_search fails, times out, returns an error, or when the user explicitly asks to use Tavily search.  Use tavily_search when Tavily-specific search controls are needed, such as advanced search depth, exact phrase matching, date ranges, country targeting, include/exclude domains, images, or raw-content search results.  For full page content from known URLs, prefer tavily_extract instead.  Returns snippets and source URLs."
     },
     {
       name: "tavily_extract",
-      description: "Extract content from specific URLs.  Use after web_search has found candidate URLs when snippets are not enough and full page content or exact source wording is needed.  Accepts a list of URLs and returns raw page content in markdown or text format."
+      description: "Extract content from specific URLs.  Use after web_search has found candidate URLs when snippets are not enough and full page content or exact source wording is needed.  Prefer this over tavily_search when the URLs are already known.  Accepts a list of URLs and returns raw page content in markdown or text format."
     },
     {
       name: "tavily_crawl",
