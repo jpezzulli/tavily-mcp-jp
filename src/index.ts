@@ -167,7 +167,7 @@ class TavilyClient {
       const tools: Tool[] = [
         {
           name: "tavily_search",
-          description: "Search the web for current information on any topic. Use for news, facts, or data beyond your knowledge cutoff. Returns snippets and source URLs.",
+          description: "Fallback Tavily web search.  Do not use as the default search tool.  Use the local web_search tool first for normal current information and source discovery.  Use tavily_search only if web_search fails, times out, returns an error, or the user explicitly asks to search with Tavily.  Returns snippets and source URLs.",
           inputSchema: {
             type: "object",
             properties: {
@@ -256,7 +256,7 @@ class TavilyClient {
         },
         {
           name: "tavily_extract",
-          description: "Extract content from URLs. Returns raw page content in markdown or text format.",
+          description: "Extract content from specific URLs.  Use after web_search has found candidate URLs when snippets are not enough and full page content or exact source wording is needed.  Accepts a list of URLs and returns raw page content in markdown or text format.",
           inputSchema: {
             type: "object",
             properties: {
@@ -861,11 +861,11 @@ function listTools(): void {
   const tools = [
     {
       name: "tavily_search",
-      description: "A real-time web search tool powered by Tavily's AI engine. Features include customizable search depth (basic/advanced/fast/ultra-fast), domain filtering, time-based filtering, and support for both general and news-specific searches. Returns comprehensive results with titles, URLs, content snippets, and optional image results."
+      description: "Fallback Tavily web search.  Do not use as the default search tool.  Use the local web_search tool first for normal current information and source discovery.  Use tavily_search only if web_search fails, times out, returns an error, or the user explicitly asks to search with Tavily.  Returns snippets and source URLs."
     },
     {
       name: "tavily_extract",
-      description: "Extracts and processes content from specified URLs with advanced parsing capabilities. Supports both basic and advanced extraction modes, with the latter providing enhanced data retrieval including tables and embedded content. Ideal for data collection, content analysis, and research tasks."
+      description: "Extract content from specific URLs.  Use after web_search has found candidate URLs when snippets are not enough and full page content or exact source wording is needed.  Accepts a list of URLs and returns raw page content in markdown or text format."
     },
     {
       name: "tavily_crawl",
