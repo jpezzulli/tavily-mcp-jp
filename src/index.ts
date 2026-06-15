@@ -167,7 +167,7 @@ class TavilyClient {
       const tools: Tool[] = [
         {
           name: "tavily_search",
-          description: "Advanced / fallback Tavily web search.  Do not use as the default search tool for normal current information.  Use local google_search first for default web discovery and source finding.  Use tavily_search when google_search fails, returns weak results, needs a second opinion, or when the user explicitly asks to use Tavily search.  Also use tavily_search when Tavily-specific search controls are useful, including advanced search depth, exact phrase matching, date ranges, country targeting, include/exclude domains, images, or raw-content search results.  For full page content from known URLs, prefer webpage_scrape or tavily_extract instead.  Returns snippets and source URLs.",
+          description: "Advanced / fallback Tavily web search.  Do not use as the default search tool for normal current information.  Use serper_google_search first for default web discovery and source finding.  Use tavily_search when serper_google_search fails, returns weak results, needs a second opinion, or when the user explicitly asks to use Tavily search.  Also use tavily_search when Tavily-specific search controls are useful, including advanced search depth, exact phrase matching, date ranges, country targeting, include/exclude domains, images, or raw-content search results.  For full page content from known URLs, prefer serper_webpage_scrape or tavily_extract instead.  Returns snippets and source URLs.",
           inputSchema: {
             type: "object",
             properties: {
@@ -256,7 +256,7 @@ class TavilyClient {
         },
         {
           name: "tavily_extract",
-          description: "Extract content from specific URLs using Tavily.  Use when candidate URLs are already known and snippets are not enough.  Suitable for full page content, exact source wording, docs, release notes, API details, build/config syntax, issue pages, or policy/legal text.  Use after local google_search has found candidate URLs, or when webpage_scrape returns weak content.  Prefer tavily_extract over tavily_search when the URLs are already known.  Accepts a list of URLs and returns raw page content in markdown or text format.",
+          description: "Extract content from specific URLs using Tavily.  Use when candidate URLs are already known and snippets are not enough.  Suitable for full page content, exact source wording, docs, release notes, API details, build/config syntax, issue pages, or policy/legal text.  Use after serper_google_search has found candidate URLs, or when serper_webpage_scrape returns weak content.  Prefer tavily_extract over tavily_search when the URLs are already known.  Accepts a list of URLs and returns raw page content in markdown or text format.",
           inputSchema: {
             type: "object",
             properties: {
@@ -861,11 +861,11 @@ function listTools(): void {
   const tools = [
     {
       name: "tavily_search",
-      description: "Advanced / fallback Tavily web search.  Do not use as the default search tool for normal current information.  Use local google_search first for default web discovery and source finding.  Use tavily_search when google_search fails, returns weak results, needs a second opinion, or when the user explicitly asks to use Tavily search.  Also use tavily_search when Tavily-specific search controls are useful, including advanced search depth, exact phrase matching, date ranges, country targeting, include/exclude domains, images, or raw-content search results.  For full page content from known URLs, prefer webpage_scrape or tavily_extract instead.  Returns snippets and source URLs."
+      description: "Advanced / fallback Tavily web search.  Do not use as the default search tool for normal current information.  Use serper_google_search first for default web discovery and source finding.  Use tavily_search when serper_google_search fails, returns weak results, needs a second opinion, or when the user explicitly asks to use Tavily search.  Also use tavily_search when Tavily-specific search controls are useful, including advanced search depth, exact phrase matching, date ranges, country targeting, include/exclude domains, images, or raw-content search results.  For full page content from known URLs, prefer serper_webpage_scrape or tavily_extract instead.  Returns snippets and source URLs."
     },
     {
       name: "tavily_extract",
-      description: "Extract content from specific URLs using Tavily.  Use when candidate URLs are already known and snippets are not enough.  Suitable for full page content, exact source wording, docs, release notes, API details, build/config syntax, issue pages, or policy/legal text.  Use after local google_search has found candidate URLs, or when webpage_scrape returns weak content.  Prefer tavily_extract over tavily_search when the URLs are already known.  Accepts a list of URLs and returns raw page content in markdown or text format."
+      description: "Extract content from specific URLs using Tavily.  Use when candidate URLs are already known and snippets are not enough.  Suitable for full page content, exact source wording, docs, release notes, API details, build/config syntax, issue pages, or policy/legal text.  Use after serper_google_search has found candidate URLs, or when serper_webpage_scrape returns weak content.  Prefer tavily_extract over tavily_search when the URLs are already known.  Accepts a list of URLs and returns raw page content in markdown or text format."
     },
     {
       name: "tavily_crawl",
