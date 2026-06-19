@@ -27,12 +27,33 @@ const TAVILY_SEARCH_DESCRIPTION =
   "Returns snippets and source URLs.";
 
 const TAVILY_EXTRACT_DESCRIPTION =
-  "High-quality extraction from specific URLs using Tavily.  " +
-  "Use when candidate URLs are already known and full page content or exact source wording matters, especially docs, release notes, API details, build/config syntax, GitHub issues, legal/policy text, or messy pages.  " +
-  "Use after serper_google_search, tavily_tavily_search, or another search tool has found candidate URLs.  " +
-  "Prefer tavily_tavily_extract over serper_webpage_scrape when clean extraction, exact wording, or page completeness matters.  " +
-  "Prefer tavily_tavily_extract over tavily_tavily_search when the URLs are already known.  " +
-  "Accepts a list of URLs and returns clean full-page extracted content in markdown or text format. Raw content is not printed by default; set TAVILY_INCLUDE_RAW_CONTENT=true only when explicitly needed.";
+  "Tavily extract returns full-page extracted text from known URLs.  It always uses advanced text extraction.  Markdown is intentionally not exposed because it tends to include image tags, navigation links, tracking artifacts, and page chrome that bloat model context.  Basic extraction is intentionally not exposed because this workstation uses Tavily extract as the fallback/deep extraction path for product pages, specs, tables, embedded content, and difficult pages.";
+
+export const TAVILY_EXTRACT_INPUT_SCHEMA: Tool["inputSchema"] = {
+  type: "object",
+  properties: {
+    urls: {
+      type: "array",
+      items: { type: "string" },
+      description: "List of URLs to extract content from",
+    },
+    include_images: {
+      type: "boolean",
+      description: "Include images from pages",
+      default: false,
+    },
+    include_favicon: {
+      type: "boolean",
+      description: "Include favicon URLs",
+      default: false,
+    },
+    query: {
+      type: "string",
+      description: "Query to rerank content chunks by relevance",
+    },
+  },
+  required: ["urls"],
+};
 
 interface TavilyResponse {
   query: string;
@@ -258,43 +279,7 @@ export class TavilyClient {
         {
           name: "tavily_extract",
           description: TAVILY_EXTRACT_DESCRIPTION,
-          inputSchema: {
-            type: "object",
-            properties: {
-              urls: {
-                type: "array",
-                items: { type: "string" },
-                description: "List of URLs to extract content from",
-              },
-              extract_depth: {
-                type: "string",
-                enum: ["basic", "advanced"],
-                description: "Use 'advanced' when tables, specs, product details, or embedded content matter. Full-page extraction remains the default behavior; this is not a chunking mode.",
-                default: "basic",
-              },
-              include_images: {
-                type: "boolean",
-                description: "Include images from pages",
-                default: false,
-              },
-              format: {
-                type: "string",
-                enum: ["markdown", "text"],
-                description: "Output format",
-                default: "markdown",
-              },
-              include_favicon: {
-                type: "boolean",
-                description: "Include favicon URLs",
-                default: false,
-              },
-              query: {
-                type: "string",
-                description: "Query to rerank content chunks by relevance",
-              },
-            },
-            required: ["urls"],
-          },
+          inputSchema: TAVILY_EXTRACT_INPUT_SCHEMA,
         },
         {
           name: "tavily_crawl",
@@ -476,9 +461,9 @@ export class TavilyClient {
           case "tavily_extract":
             response = await this.extract({
               urls: args.urls,
-              extract_depth: args.extract_depth,
+              extract_depth: "advanced",
               include_images: args.include_images,
-              format: args.format,
+              format: "text",
               include_favicon: args.include_favicon,
               query: args.query,
             });
@@ -637,6 +622,8 @@ export class TavilyClient {
   async extract(params: any): Promise<TavilyResponse> {
     const response = await this.axiosInstance.post(this.baseURLs.extract, {
       ...params,
+      extract_depth: "advanced",
+      format: "text",
       ...(IS_KEYLESS ? {} : { api_key: API_KEY }),
     });
     return response.data;
