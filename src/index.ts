@@ -27,7 +27,7 @@ const TAVILY_SEARCH_DESCRIPTION =
   "Returns snippets and source URLs.";
 
 const TAVILY_EXTRACT_DESCRIPTION =
-  "Tavily extract returns full-page extracted text from known URLs.  It always uses advanced text extraction.  Markdown is intentionally not exposed because it tends to include image tags, navigation links, tracking artifacts, and page chrome that bloat model context.  Basic extraction is intentionally not exposed because this workstation uses Tavily extract as the fallback/deep extraction path for product pages, specs, tables, embedded content, and difficult pages.";
+  "Tavily extract returns full-page extracted text from known webpage URLs.  Use it when serper_webpage_scrape is thin, blocked, incomplete, JS-heavy, or missing important page details.  If a URL appears to point to a file type the local workstation can directly inspect or convert, download it and inspect it with local tools instead.";
 
 export const TAVILY_EXTRACT_INPUT_SCHEMA: Tool["inputSchema"] = {
   type: "object",
