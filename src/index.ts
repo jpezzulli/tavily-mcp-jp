@@ -35,7 +35,7 @@ export const TAVILY_EXTRACT_INPUT_SCHEMA: Tool["inputSchema"] = {
     urls: {
       type: "array",
       items: { type: "string" },
-      description: "List of URLs to extract content from",
+      description: "Known webpage URLs to extract.  Do not pass URLs that appear to point to file types the local workstation can directly inspect or convert; download those and inspect them with local tools instead.",
     },
     include_images: {
       type: "boolean",
