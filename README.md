@@ -211,18 +211,16 @@ export DEFAULT_PARAMETERS='{"include_images": true}'
 
 `tavily_extract` is intended for full-page extraction from known URLs. By default, formatted MCP responses print the clean extracted `Content:` field only; `raw_content` is not printed, which keeps model context focused and avoids dumping boilerplate or page garbage into responses.
 
-Recommended extraction settings for product, specification, documentation, and source pages are:
+`tavily_extract` always sends advanced text extraction to Tavily:
 
 ```json
 {
   "extract_depth": "advanced",
-  "format": "text",
-  "include_images": false,
-  "include_favicon": false
+  "format": "text"
 }
 ```
 
-Advanced extraction remains appropriate when tables, specs, product details, and embedded content matter. Tavily MCP does not use chunking as the default extraction path for `tavily_extract`.
+The tool schema intentionally does not expose markdown output or basic extraction. Advanced text extraction remains appropriate when tables, specs, product details, and embedded content matter. Tavily MCP does not use chunking as the default extraction path for `tavily_extract`.
 
 If you explicitly need raw content in formatted output for debugging or a specialized workflow, opt in with:
 

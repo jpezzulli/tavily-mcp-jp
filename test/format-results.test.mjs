@@ -105,7 +105,7 @@ test('formatted result does not print separate Raw Content when only raw_content
   delete process.env.TAVILY_INCLUDE_RAW_CONTENT;
 });
 
-test('advanced extract option remains forwarded', async () => {
+test('tavily_extract always sends advanced text extraction with no caller format or depth', async () => {
   const { TavilyClient } = await import(modulePath);
   const client = new TavilyClient();
   let posted;
@@ -118,8 +118,6 @@ test('advanced extract option remains forwarded', async () => {
 
   await client.extract({
     urls: ['https://example.com/specs'],
-    extract_depth: 'advanced',
-    format: 'text',
     include_images: false,
     include_favicon: false,
   });
@@ -129,4 +127,56 @@ test('advanced extract option remains forwarded', async () => {
   assert.equal(posted.include_images, false);
   assert.equal(posted.include_favicon, false);
   assert.ok(!('chunks_per_source' in posted));
+});
+
+test('tavily_extract ignores caller-supplied markdown format', async () => {
+  const { TavilyClient } = await import(modulePath);
+  const client = new TavilyClient();
+  let posted;
+  client.axiosInstance = {
+    post: async (_url, body) => {
+      posted = body;
+      return { data: { query: '', results: [] } };
+    },
+  };
+
+  await client.extract({
+    urls: ['https://example.com/specs'],
+    format: 'markdown',
+  });
+
+  assert.equal(posted.format, 'text');
+  assert.equal(posted.extract_depth, 'advanced');
+  assert.ok(!('chunks_per_source' in posted));
+});
+
+test('tavily_extract ignores caller-supplied basic extract depth', async () => {
+  const { TavilyClient } = await import(modulePath);
+  const client = new TavilyClient();
+  let posted;
+  client.axiosInstance = {
+    post: async (_url, body) => {
+      posted = body;
+      return { data: { query: '', results: [] } };
+    },
+  };
+
+  await client.extract({
+    urls: ['https://example.com/specs'],
+    extract_depth: 'basic',
+  });
+
+  assert.equal(posted.extract_depth, 'advanced');
+  assert.equal(posted.format, 'text');
+  assert.ok(!('chunks_per_source' in posted));
+});
+
+test('tavily_extract schema does not expose format, extract_depth, or chunking defaults', async () => {
+  const { TAVILY_EXTRACT_INPUT_SCHEMA } = await import(modulePath);
+  const properties = TAVILY_EXTRACT_INPUT_SCHEMA.properties;
+
+  assert.ok(!('format' in properties));
+  assert.ok(!('extract_depth' in properties));
+  assert.ok(!('chunks_per_source' in properties));
+  assert.ok(!('chunking' in properties));
 });
