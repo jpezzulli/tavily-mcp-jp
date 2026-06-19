@@ -206,6 +206,32 @@ export DEFAULT_PARAMETERS='{"include_images": true}'
 }
 ```
 
+
+## Tavily Extract Output
+
+`tavily_extract` is intended for full-page extraction from known URLs. By default, formatted MCP responses print the clean extracted `Content:` field only; `raw_content` is not printed, which keeps model context focused and avoids dumping boilerplate or page garbage into responses.
+
+Recommended extraction settings for product, specification, documentation, and source pages are:
+
+```json
+{
+  "extract_depth": "advanced",
+  "format": "text",
+  "include_images": false,
+  "include_favicon": false
+}
+```
+
+Advanced extraction remains appropriate when tables, specs, product details, and embedded content matter. Tavily MCP does not use chunking as the default extraction path for `tavily_extract`.
+
+If you explicitly need raw content in formatted output for debugging or a specialized workflow, opt in with:
+
+```bash
+export TAVILY_INCLUDE_RAW_CONTENT=true
+```
+
+The default is `false`.
+
 ## Identifying the End User (Optional)
 
 You can optionally identify the end user on whose behalf requests are being made by setting the `TAVILY_HUMAN_ID` environment variable. When set, Tavily MCP forwards it as the `X-Human-Id` header on every API call, enabling per-user analytics.

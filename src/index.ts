@@ -5,6 +5,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema, Tool } from "@modelcontextprotocol/sdk/types.js";
 import axios from "axios";
 import { randomUUID } from "crypto";
+import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import yargs from "yargs";
@@ -31,7 +32,7 @@ const TAVILY_EXTRACT_DESCRIPTION =
   "Use after serper_google_search, tavily_tavily_search, or another search tool has found candidate URLs.  " +
   "Prefer tavily_tavily_extract over serper_webpage_scrape when clean extraction, exact wording, or page completeness matters.  " +
   "Prefer tavily_tavily_extract over tavily_tavily_search when the URLs are already known.  " +
-  "Accepts a list of URLs and returns raw page content in markdown or text format.";
+  "Accepts a list of URLs and returns clean full-page extracted content in markdown or text format. Raw content is not printed by default; set TAVILY_INCLUDE_RAW_CONTENT=true only when explicitly needed.";
 
 interface TavilyResponse {
   query: string;
@@ -75,7 +76,7 @@ interface TavilyMapResponse {
   response_time: number;
 }
 
-class TavilyClient {
+export class TavilyClient {
   private server: Server;
   private axiosInstance;
   private baseURLs = {
@@ -268,7 +269,7 @@ class TavilyClient {
               extract_depth: {
                 type: "string",
                 enum: ["basic", "advanced"],
-                description: "Use 'advanced' for LinkedIn, protected sites, or tables/embedded content",
+                description: "Use 'advanced' when tables, specs, product details, or embedded content matter. Full-page extraction remains the default behavior; this is not a chunking mode.",
                 default: "basic",
               },
               include_images: {
@@ -751,7 +752,11 @@ function formatKeylessEnvelope(data: any): string {
   return lines.filter(Boolean).join("\n");
 }
 
-function formatResults(response: TavilyResponse): string {
+export function includeRawContentInOutput(): boolean {
+  return process.env.TAVILY_INCLUDE_RAW_CONTENT === "true";
+}
+
+export function formatResults(response: TavilyResponse): string {
   const output: string[] = [];
 
   if (response.answer) {
@@ -763,7 +768,7 @@ function formatResults(response: TavilyResponse): string {
     output.push(`\nTitle: ${result.title}`);
     output.push(`URL: ${result.url}`);
     output.push(`Content: ${result.content}`);
-    if (result.raw_content) {
+    if (includeRawContentInOutput() && result.raw_content) {
       output.push(`Raw Content: ${result.raw_content}`);
     }
     if (result.favicon) {
@@ -884,5 +889,7 @@ if (argv["list-tools"]) {
   listTools();
 }
 
-const server = new TavilyClient();
-server.run().catch(console.error);
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const server = new TavilyClient();
+  server.run().catch(console.error);
+}
