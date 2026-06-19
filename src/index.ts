@@ -45,7 +45,7 @@ interface TavilyResponse {
   results: Array<{
     title: string;
     url: string;
-    content: string;
+    content?: string;
     score: number;
     published_date?: string;
     raw_content?: string;
@@ -756,6 +756,27 @@ export function includeRawContentInOutput(): boolean {
   return process.env.TAVILY_INCLUDE_RAW_CONTENT === "true";
 }
 
+function hasContent(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function getDisplayContent(result: TavilyResponse["results"][number]): string | undefined {
+  if (hasContent(result.content)) {
+    return result.content;
+  }
+  if (hasContent(result.raw_content)) {
+    return result.raw_content;
+  }
+  return undefined;
+}
+
+function shouldPrintRawContent(result: TavilyResponse["results"][number]): boolean {
+  return includeRawContentInOutput()
+    && hasContent(result.raw_content)
+    && hasContent(result.content)
+    && result.raw_content !== result.content;
+}
+
 export function formatResults(response: TavilyResponse): string {
   const output: string[] = [];
 
@@ -767,8 +788,11 @@ export function formatResults(response: TavilyResponse): string {
   response.results.forEach(result => {
     output.push(`\nTitle: ${result.title}`);
     output.push(`URL: ${result.url}`);
-    output.push(`Content: ${result.content}`);
-    if (includeRawContentInOutput() && result.raw_content) {
+    const displayContent = getDisplayContent(result);
+    if (displayContent) {
+      output.push(`Content: ${displayContent}`);
+    }
+    if (shouldPrintRawContent(result)) {
       output.push(`Raw Content: ${result.raw_content}`);
     }
     if (result.favicon) {
