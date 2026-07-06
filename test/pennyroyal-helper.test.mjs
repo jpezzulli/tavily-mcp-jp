@@ -39,6 +39,22 @@ test('missing config means helper disabled and default descriptions exist', asyn
   assert.deepEqual(cfg.toolDescriptions, {});
 });
 
+test('default config resolves from package root, not process cwd', async () => {
+  const { loadPennyroyalConfig } = await import(modulePath);
+  const dir = tempDir();
+  const originalCwd = process.cwd();
+  try {
+    process.chdir(dir);
+    const cfg = loadPennyroyalConfig();
+    assert.equal(cfg.enabled, false);
+    assert.match(cfg.toolDescriptions.tavily_extract, /Preferred deeper known-webpage extraction/);
+    assert.equal(path.basename(cfg.baseDir), 'tavily-mcp-jp');
+  } finally {
+    process.chdir(originalCwd);
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('invalid config disables helper and fails open', async () => {
   const { loadPennyroyalConfig } = await import(modulePath);
   const dir = tempDir();
@@ -48,6 +64,36 @@ test('invalid config disables helper and fails open', async () => {
   assert.equal(cfg.enabled, false);
   assert.equal(cfg.sourcePacket.enabled, false);
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('absolute config under repo-like config dir resolves relative promptFile from repo root', async () => {
+  const { loadPennyroyalConfig, PennyroyalHelperClient } = await import(modulePath);
+  const repo = tempDir();
+  mkdirSync(path.join(repo, 'config'));
+  mkdirSync(path.join(repo, 'prompts'));
+  writeFileSync(path.join(repo, 'prompts/source_packet.md'), 'repo-root prompt');
+
+  let body;
+  const server = http.createServer((req, res) => {
+    req.on('data', c => body = (body || '') + c);
+    req.on('end', () => res.end(JSON.stringify({ choices: [{ message: { content: 'packet' } }] })));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const cfgFile = path.join(repo, 'config/pennyroyal-helper.xml');
+    writeFileSync(cfgFile, configXml({ endpoint: `http://127.0.0.1:${server.address().port}/v1/chat/completions` }));
+    const cfg = loadPennyroyalConfig(cfgFile);
+    assert.equal(cfg.baseDir, repo);
+
+    const helper = new PennyroyalHelperClient(cfg);
+    await helper.sourcePacket({ sources: [] });
+
+    assert.equal(JSON.parse(body).messages[0].content, 'repo-root prompt');
+  } finally {
+    server.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 test('tool description XML overrides work while defaults remain available', async () => {

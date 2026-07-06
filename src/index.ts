@@ -19,6 +19,8 @@ const API_KEY = process.env.TAVILY_API_KEY;
 const IS_KEYLESS = !API_KEY;
 const HUMAN_ID = process.env.TAVILY_HUMAN_ID;
 const SESSION_ID = randomUUID();
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+export const PACKAGE_ROOT = path.resolve(MODULE_DIR, "..");
 const DEFAULT_PENNYROYAL_CONFIG_PATH = "config/pennyroyal-helper.xml";
 const DEFAULT_PENNYROYAL_ENDPOINT = "http://127.0.0.1:8001/v1/chat/completions";
 const DEFAULT_PENNYROYAL_MODEL = "pennyroyal";
@@ -40,6 +42,7 @@ interface PennyroyalConfig {
   model: string;
   maxConcurrent: number;
   failOpen: boolean;
+  baseDir: string;
   toolDescriptions: Record<string, string>;
   sourcePacket: {
     enabled: boolean;
@@ -57,6 +60,7 @@ const DEFAULT_PENNYROYAL_CONFIG: PennyroyalConfig = {
   model: DEFAULT_PENNYROYAL_MODEL,
   maxConcurrent: 2,
   failOpen: true,
+  baseDir: PACKAGE_ROOT,
   toolDescriptions: {},
   sourcePacket: {
     enabled: false,
@@ -85,9 +89,23 @@ function numberValue(value: string | undefined, fallback: number, min = 1): numb
   return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
 }
 
+function defaultPennyroyalConfig(): PennyroyalConfig {
+  return JSON.parse(JSON.stringify(DEFAULT_PENNYROYAL_CONFIG));
+}
+
+function resolvePennyroyalConfigPath(configPath: string): string {
+  return path.isAbsolute(configPath) ? configPath : path.resolve(PACKAGE_ROOT, configPath);
+}
+
+function promptBaseDirForConfig(resolvedConfigPath: string): string {
+  const configDir = path.dirname(resolvedConfigPath);
+  return path.basename(configDir) === "config" ? path.dirname(configDir) : configDir;
+}
+
 export function loadPennyroyalConfig(configPath = process.env.TAVILY_PENNYROYAL_HELPER_CONFIG || DEFAULT_PENNYROYAL_CONFIG_PATH): PennyroyalConfig {
-  const config: PennyroyalConfig = JSON.parse(JSON.stringify(DEFAULT_PENNYROYAL_CONFIG));
-  const resolvedPath = path.isAbsolute(configPath) ? configPath : path.resolve(process.cwd(), configPath);
+  const config = defaultPennyroyalConfig();
+  const resolvedPath = resolvePennyroyalConfigPath(configPath);
+  config.baseDir = promptBaseDirForConfig(resolvedPath);
   if (!existsSync(resolvedPath)) return config;
 
   try {
@@ -117,7 +135,9 @@ export function loadPennyroyalConfig(configPath = process.env.TAVILY_PENNYROYAL_
     return config;
   } catch (error: any) {
     console.warn(`[tavily-mcp] invalid pennyroyal helper config; helper disabled: ${error.message}`);
-    return DEFAULT_PENNYROYAL_CONFIG;
+    const disabledConfig = defaultPennyroyalConfig();
+    disabledConfig.baseDir = promptBaseDirForConfig(resolvedPath);
+    return disabledConfig;
   }
 }
 
@@ -165,7 +185,7 @@ class Semaphore {
 
 export class PennyroyalHelperClient {
   private semaphore: Semaphore;
-  constructor(private readonly config: PennyroyalConfig, private readonly baseDir = process.cwd()) {
+  constructor(private readonly config: PennyroyalConfig, private readonly baseDir = config.baseDir || PACKAGE_ROOT) {
     this.semaphore = new Semaphore(Math.max(1, config.maxConcurrent || 2));
   }
   async sourcePacket(taskPayload: any): Promise<string> {
