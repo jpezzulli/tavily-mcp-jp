@@ -1,0 +1,24 @@
+<pennyroyalHelper enabled="false">
+  <endpoint>http://127.0.0.1:8001/v1/chat/completions</endpoint>
+  <model>pennyroyal</model>
+  <maxConcurrent>2</maxConcurrent>
+  <failOpen>true</failOpen>
+
+  <toolDescriptions>
+    <tool name="tavily_search">
+      Advanced Tavily web search for second-opinion search, deeper source discovery, and Tavily-specific search controls. Use when Serper results are thin or ambiguous, when another search source would improve confidence, or when the user asks for Tavily.
+    </tool>
+
+    <tool name="tavily_extract">
+      Preferred deeper known-webpage extraction for source-packet workflows. Use when the model needs query-aware extraction, reduced boilerplate, relevant chunks, or cleaner evidence from a known URL. Do not use for file-like URLs that the local workstation can inspect.
+    </tool>
+  </toolDescriptions>
+
+  <sourcePacket enabled="false">
+    <enableThinking>true</enableThinking>
+    <timeoutSeconds>180</timeoutSeconds>
+    <maxInputTokens>80000</maxInputTokens>
+    <maxOutputTokens>6000</maxOutputTokens>
+    <promptFile>prompts/source_packet.md</promptFile>
+  </sourcePacket>
+</pennyroyalHelper>

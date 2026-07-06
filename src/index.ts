@@ -5,6 +5,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema, Tool } from "@modelcontextprotocol/sdk/types.js";
 import axios from "axios";
 import { randomUUID } from "crypto";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
@@ -17,6 +19,9 @@ const API_KEY = process.env.TAVILY_API_KEY;
 const IS_KEYLESS = !API_KEY;
 const HUMAN_ID = process.env.TAVILY_HUMAN_ID;
 const SESSION_ID = randomUUID();
+const DEFAULT_PENNYROYAL_CONFIG_PATH = "config/pennyroyal-helper.xml";
+const DEFAULT_PENNYROYAL_ENDPOINT = "http://127.0.0.1:8001/v1/chat/completions";
+const DEFAULT_PENNYROYAL_MODEL = "pennyroyal";
 
 const TAVILY_SEARCH_DESCRIPTION =
   "Advanced Tavily web search for second-opinion search, deeper source discovery, and Tavily-specific search controls.  " +
@@ -27,7 +32,183 @@ const TAVILY_SEARCH_DESCRIPTION =
   "Returns snippets and source URLs.";
 
 const TAVILY_EXTRACT_DESCRIPTION =
-  "Tavily extract returns full-page extracted text from known webpage URLs.  Use it when serper_webpage_scrape is thin, blocked, incomplete, JS-heavy, or missing important page details.  If a URL appears to point to a file type the local workstation can directly inspect or convert, download it and inspect it with local tools instead.";
+  "Preferred deeper known-webpage extraction and source-packet input. Use for query-aware extraction, reduced boilerplate, relevant chunks, or cleaner evidence from a known URL. Use Serper scrape when raw/full-page browser-style text or full page footprint matters, or when Tavily is thin/failed. Do not use for file-like URLs that the local workstation can inspect.";
+
+interface PennyroyalConfig {
+  enabled: boolean;
+  endpoint: string;
+  model: string;
+  maxConcurrent: number;
+  failOpen: boolean;
+  toolDescriptions: Record<string, string>;
+  sourcePacket: {
+    enabled: boolean;
+    enableThinking: boolean;
+    timeoutSeconds: number;
+    maxInputTokens: number;
+    maxOutputTokens: number;
+    promptFile: string;
+  };
+}
+
+const DEFAULT_PENNYROYAL_CONFIG: PennyroyalConfig = {
+  enabled: false,
+  endpoint: DEFAULT_PENNYROYAL_ENDPOINT,
+  model: DEFAULT_PENNYROYAL_MODEL,
+  maxConcurrent: 2,
+  failOpen: true,
+  toolDescriptions: {},
+  sourcePacket: {
+    enabled: false,
+    enableThinking: true,
+    timeoutSeconds: 180,
+    maxInputTokens: 80000,
+    maxOutputTokens: 6000,
+    promptFile: "prompts/source_packet.md",
+  },
+};
+
+function xmlText(xml: string, tag: string): string | undefined {
+  const match = xml.match(new RegExp(`<${tag}>\\s*([\\s\\S]*?)\\s*</${tag}>`, "i"));
+  return match?.[1]?.trim();
+}
+
+function boolValue(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  if (/^true$/i.test(value.trim())) return true;
+  if (/^false$/i.test(value.trim())) return false;
+  return fallback;
+}
+
+function numberValue(value: string | undefined, fallback: number, min = 1): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min ? parsed : fallback;
+}
+
+export function loadPennyroyalConfig(configPath = process.env.TAVILY_PENNYROYAL_HELPER_CONFIG || DEFAULT_PENNYROYAL_CONFIG_PATH): PennyroyalConfig {
+  const config: PennyroyalConfig = JSON.parse(JSON.stringify(DEFAULT_PENNYROYAL_CONFIG));
+  const resolvedPath = path.isAbsolute(configPath) ? configPath : path.resolve(process.cwd(), configPath);
+  if (!existsSync(resolvedPath)) return config;
+
+  try {
+    const xml = readFileSync(resolvedPath, "utf8");
+    const rootMatch = xml.match(/<pennyroyalHelper\b([^>]*)>/i);
+    if (!rootMatch) throw new Error("missing <pennyroyalHelper> root");
+    config.enabled = boolValue(rootMatch[1].match(/\benabled=["']([^"']+)["']/i)?.[1], false);
+    config.endpoint = xmlText(xml, "endpoint") || config.endpoint;
+    config.model = xmlText(xml, "model") || config.model;
+    config.maxConcurrent = numberValue(xmlText(xml, "maxConcurrent"), config.maxConcurrent);
+    config.failOpen = boolValue(xmlText(xml, "failOpen"), config.failOpen);
+
+    for (const match of xml.matchAll(/<tool\b[^>]*\bname=["']([^"']+)["'][^>]*>([\s\S]*?)<\/tool>/gi)) {
+      config.toolDescriptions[match[1]] = match[2].trim().replace(/\s+/g, " ");
+    }
+
+    const sourceMatch = xml.match(/<sourcePacket\b([^>]*)>([\s\S]*?)<\/sourcePacket>/i);
+    if (sourceMatch) {
+      const body = sourceMatch[2];
+      config.sourcePacket.enabled = boolValue(sourceMatch[1].match(/\benabled=["']([^"']+)["']/i)?.[1], false);
+      config.sourcePacket.enableThinking = boolValue(xmlText(body, "enableThinking"), true);
+      config.sourcePacket.timeoutSeconds = numberValue(xmlText(body, "timeoutSeconds"), 180);
+      config.sourcePacket.maxInputTokens = numberValue(xmlText(body, "maxInputTokens"), 80000);
+      config.sourcePacket.maxOutputTokens = numberValue(xmlText(body, "maxOutputTokens"), 6000);
+      config.sourcePacket.promptFile = xmlText(body, "promptFile") || config.sourcePacket.promptFile;
+    }
+    return config;
+  } catch (error: any) {
+    console.warn(`[tavily-mcp] invalid pennyroyal helper config; helper disabled: ${error.message}`);
+    return DEFAULT_PENNYROYAL_CONFIG;
+  }
+}
+
+const FILE_LIKE_EXTENSIONS = new Set(["pdf", "csv", "tsv", "xlsx", "xls", "doc", "docx", "ppt", "pptx", "zip", "gz", "tar", "7z", "rar", "png", "jpg", "jpeg", "webp", "gif", "svg"]);
+
+export function isFileLikeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname.toLowerCase();
+    const extension = pathname.split("/").pop()?.match(/\.([a-z0-9]+)$/)?.[1];
+    return !!extension && FILE_LIKE_EXTENSIONS.has(extension);
+  } catch {
+    const extension = url.split(/[?#]/)[0].toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+    return !!extension && FILE_LIKE_EXTENSIONS.has(extension);
+  }
+}
+
+export function formatFileLikeUrlInstruction(urls: string[]): string {
+  return [
+    "FILE-LIKE URL DETECTED",
+    "",
+    "Instructions for model:",
+    "Use your local workstation to download and inspect this file.  Do not use Serper webpage_scrape or Tavily extract for this URL.",
+    "",
+    "URL:",
+    ...urls,
+  ].join("\n");
+}
+
+class Semaphore {
+  private active = 0;
+  private queue: Array<() => void> = [];
+  constructor(private readonly maxConcurrent: number) {}
+  async acquire(): Promise<() => void> {
+    if (this.active >= this.maxConcurrent) {
+      await new Promise<void>(resolve => this.queue.push(resolve));
+    }
+    this.active += 1;
+    return () => {
+      this.active -= 1;
+      this.queue.shift()?.();
+    };
+  }
+}
+
+export class PennyroyalHelperClient {
+  private semaphore: Semaphore;
+  constructor(private readonly config: PennyroyalConfig, private readonly baseDir = process.cwd()) {
+    this.semaphore = new Semaphore(Math.max(1, config.maxConcurrent || 2));
+  }
+  async sourcePacket(taskPayload: any): Promise<string> {
+    const started = Date.now();
+    const timeoutMs = this.config.sourcePacket.timeoutSeconds * 1000;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+      timer.unref?.();
+    });
+    return Promise.race([this.sourcePacketInner(taskPayload, started, timeoutMs), timeoutPromise]);
+  }
+  private async sourcePacketInner(taskPayload: any, started: number, timeoutMs: number): Promise<string> {
+    const release = await this.semaphore.acquire();
+    try {
+      if (Date.now() - started >= timeoutMs) throw new Error("timeout waiting for helper concurrency slot");
+      const promptPath = path.isAbsolute(this.config.sourcePacket.promptFile)
+        ? this.config.sourcePacket.promptFile
+        : path.resolve(this.baseDir, this.config.sourcePacket.promptFile);
+      if (!existsSync(promptPath)) throw new Error("missing prompt file");
+      const prompt = readFileSync(promptPath, "utf8");
+      const userContent = boundString(JSON.stringify(taskPayload), this.config.sourcePacket.maxInputTokens * 4);
+      const requestBody: any = {
+        model: this.config.model,
+        messages: [
+          { role: "system", content: prompt },
+          { role: "user", content: userContent },
+        ],
+        max_tokens: this.config.sourcePacket.maxOutputTokens,
+        temperature: 0,
+        stream: false,
+      };
+      if (this.config.sourcePacket.enableThinking === false) {
+        requestBody.chat_template_kwargs = { enable_thinking: false };
+      }
+      const response = await axios.post(this.config.endpoint, requestBody, { timeout: Math.max(1, timeoutMs - (Date.now() - started)), proxy: false });
+      const content = response.data?.choices?.[0]?.message?.content;
+      if (!hasContent(content)) throw new Error("malformed helper response");
+      return boundString(content, this.config.sourcePacket.maxOutputTokens * 8);
+    } finally {
+      release();
+    }
+  }
+}
 
 export const TAVILY_EXTRACT_INPUT_SCHEMA: Tool["inputSchema"] = {
   type: "object",
@@ -100,6 +281,8 @@ interface TavilyMapResponse {
 export class TavilyClient {
   private server: Server;
   private axiosInstance;
+  private pennyroyalConfig: PennyroyalConfig;
+  private pennyroyalHelper: PennyroyalHelperClient;
   private baseURLs = {
     search: "https://api.tavily.com/search",
     extract: "https://api.tavily.com/extract",
@@ -117,6 +300,8 @@ export class TavilyClient {
   };
 
   constructor() {
+    this.pennyroyalConfig = loadPennyroyalConfig();
+    this.pennyroyalHelper = new PennyroyalHelperClient(this.pennyroyalConfig);
     this.server = new Server(
       {
         name: "tavily-mcp",
@@ -189,7 +374,7 @@ export class TavilyClient {
       const tools: Tool[] = [
         {
           name: "tavily_search",
-          description: TAVILY_SEARCH_DESCRIPTION,
+          description: this.getToolDescription("tavily_search", TAVILY_SEARCH_DESCRIPTION),
           inputSchema: {
             type: "object",
             properties: {
@@ -278,7 +463,7 @@ export class TavilyClient {
         },
         {
           name: "tavily_extract",
-          description: TAVILY_EXTRACT_DESCRIPTION,
+          description: this.getToolDescription("tavily_extract", TAVILY_EXTRACT_DESCRIPTION),
           inputSchema: TAVILY_EXTRACT_INPUT_SCHEMA,
         },
         {
@@ -459,15 +644,12 @@ export class TavilyClient {
             break;
 
           case "tavily_extract":
-            response = await this.extract({
-              urls: args.urls,
-              extract_depth: "advanced",
-              include_images: args.include_images,
-              format: "text",
-              include_favicon: args.include_favicon,
-              query: args.query,
-            });
-            break;
+            return {
+              content: [{
+                type: "text",
+                text: await this.handleExtractTool(args),
+              }],
+            };
 
           case "tavily_crawl": {
             const crawlResponse = await this.crawl({
@@ -568,10 +750,45 @@ export class TavilyClient {
     });
   }
 
+  private getToolDescription(toolName: string, fallback: string): string {
+    return this.pennyroyalConfig.toolDescriptions[toolName] || fallback;
+  }
+
+  private isSourcePacketEnabled(): boolean {
+    return this.pennyroyalConfig.enabled && this.pennyroyalConfig.sourcePacket.enabled;
+  }
+
   async run(): Promise<void> {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error("Tavily MCP server running on stdio");
+  }
+
+  async handleExtractTool(args: any): Promise<string> {
+    if (Array.isArray(args.urls)) {
+      const fileLikeUrls = args.urls.filter((url: unknown): url is string => typeof url === "string" && isFileLikeUrl(url));
+      if (fileLikeUrls.length > 0) {
+        return formatFileLikeUrlInstruction(fileLikeUrls);
+      }
+    }
+
+    const response = await this.extract({
+      urls: args.urls,
+      extract_depth: "advanced",
+      include_images: args.include_images,
+      format: "text",
+      include_favicon: args.include_favicon,
+      query: args.query,
+    });
+
+    const formatted = formatResults(response);
+    if (!this.isSourcePacketEnabled()) return formatted;
+
+    try {
+      return await this.pennyroyalHelper.sourcePacket(buildSourcePacketPayload(response, args));
+    } catch (error: any) {
+      return `${formatted}\n\npennyroyal source_packet failed open: ${error.message || String(error)}`;
+    }
   }
 
   async search(params: any): Promise<TavilyResponse> {
@@ -747,6 +964,11 @@ function hasContent(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function boundString(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `${value.slice(0, Math.max(0, maxChars))}\n[truncated]`;
+}
+
 function getDisplayContent(result: TavilyResponse["results"][number]): string | undefined {
   if (hasContent(result.content)) {
     return result.content;
@@ -804,6 +1026,21 @@ export function formatResults(response: TavilyResponse): string {
   return output.join("\n");
 }
 
+export function buildSourcePacketPayload(response: TavilyResponse, args: any): any {
+  return {
+    query: typeof args.query === "string" ? args.query : response.query,
+    urls: Array.isArray(args.urls) ? args.urls : [],
+    sources: response.results.map(result => ({
+      url: result.url,
+      title: result.title,
+      content: boundString(getDisplayContent(result) || "", 12000),
+      raw_content: shouldPrintRawContent(result) ? boundString(result.raw_content || "", 12000) : undefined,
+      published_date: result.published_date,
+      favicon: result.favicon,
+    })),
+  };
+}
+
 function formatCrawlResults(response: TavilyCrawlResponse): string {
   const output: string[] = [];
 
@@ -850,14 +1087,15 @@ function formatResearchResults(response: TavilyResearchResponse): string {
 }
 
 function listTools(): void {
+  const config = loadPennyroyalConfig();
   const tools = [
     {
       name: "tavily_search",
-      description: TAVILY_SEARCH_DESCRIPTION,
+      description: config.toolDescriptions.tavily_search || TAVILY_SEARCH_DESCRIPTION,
     },
     {
       name: "tavily_extract",
-      description: TAVILY_EXTRACT_DESCRIPTION,
+      description: config.toolDescriptions.tavily_extract || TAVILY_EXTRACT_DESCRIPTION,
     },
     {
       name: "tavily_crawl",
