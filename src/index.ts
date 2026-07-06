@@ -36,6 +36,9 @@ const TAVILY_SEARCH_DESCRIPTION =
 const TAVILY_EXTRACT_DESCRIPTION =
   "Preferred deeper known-webpage extraction and source-packet input. Use for query-aware extraction, reduced boilerplate, relevant chunks, or cleaner evidence from a known URL. Use Serper scrape when raw/full-page browser-style text or full page footprint matters, or when Tavily is thin/failed. Do not use for file-like URLs that the local workstation can inspect.";
 
+const TAVILY_SEARCH_PACKET_DESCRIPTION =
+  "Runs Tavily search and routes the combined returned search results through the Pennyroyal sourcePacket helper. Use when you need a synthesized, source-packet-style evidence packet from search-discovered sources instead of raw Tavily snippets. For raw Tavily output, use tavily_search.";
+
 interface PennyroyalConfig {
   enabled: boolean;
   endpoint: string;
@@ -67,7 +70,7 @@ const DEFAULT_PENNYROYAL_CONFIG: PennyroyalConfig = {
     enableThinking: true,
     timeoutSeconds: 180,
     maxInputTokens: 80000,
-    maxOutputTokens: 16000,
+    maxOutputTokens: 20000,
     promptFile: "prompts/source_packet.md",
   },
 };
@@ -129,7 +132,7 @@ export function loadPennyroyalConfig(configPath = process.env.TAVILY_PENNYROYAL_
       config.sourcePacket.enableThinking = boolValue(xmlText(body, "enableThinking"), true);
       config.sourcePacket.timeoutSeconds = numberValue(xmlText(body, "timeoutSeconds"), 180);
       config.sourcePacket.maxInputTokens = numberValue(xmlText(body, "maxInputTokens"), 80000);
-      config.sourcePacket.maxOutputTokens = numberValue(xmlText(body, "maxOutputTokens"), 16000);
+      config.sourcePacket.maxOutputTokens = numberValue(xmlText(body, "maxOutputTokens"), 20000);
       config.sourcePacket.promptFile = xmlText(body, "promptFile") || config.sourcePacket.promptFile;
     }
     return config;
@@ -254,6 +257,93 @@ export const TAVILY_EXTRACT_INPUT_SCHEMA: Tool["inputSchema"] = {
     },
   },
   required: ["urls"],
+};
+
+
+export const TAVILY_SEARCH_INPUT_SCHEMA: Tool["inputSchema"] = {
+  type: "object",
+  properties: {
+    query: {
+      type: "string",
+      description: "Search query",
+    },
+    search_depth: {
+      type: "string",
+      enum: ["basic", "advanced", "fast", "ultra-fast"],
+      description: "The depth of the search. 'basic' for generic results, 'advanced' for more thorough search, 'fast' for optimized low latency with high relevance, 'ultra-fast' for prioritizing latency above all else",
+      default: "basic",
+    },
+    topic: {
+      type: "string",
+      enum: ["general"],
+      description: "The category of the search. This will determine which of our agents will be used for the search",
+      default: "general",
+    },
+    time_range: {
+      type: "string",
+      description: "The time range back from the current date to include in the search results",
+      enum: ["day", "week", "month", "year"],
+    },
+    start_date: {
+      type: "string",
+      description: "Will return all results after the specified start date. Required to be written in the format YYYY-MM-DD.",
+      default: "",
+    },
+    end_date: {
+      type: "string",
+      description: "Will return all results before the specified end date. Required to be written in the format YYYY-MM-DD",
+      default: "",
+    },
+    max_results: {
+      type: "number",
+      description: "The maximum number of search results to return",
+      default: 5,
+      minimum: 5,
+      maximum: 20,
+    },
+    include_images: {
+      type: "boolean",
+      description: "Include a list of query-related images in the response",
+      default: false,
+    },
+    include_image_descriptions: {
+      type: "boolean",
+      description: "Include a list of query-related images and their descriptions in the response",
+      default: false,
+    },
+    include_raw_content: {
+      type: "boolean",
+      description: "Include the cleaned and parsed HTML content of each search result",
+      default: false,
+    },
+    include_domains: {
+      type: "array",
+      items: { type: "string" },
+      description: "A list of domains to specifically include in the search results, if the user asks to search on specific sites set this to the domain of the site",
+      default: [],
+    },
+    exclude_domains: {
+      type: "array",
+      items: { type: "string" },
+      description: "List of domains to specifically exclude, if the user asks to exclude a domain set this to the domain of the site",
+      default: [],
+    },
+    country: {
+      type: "string",
+      description: "Boost search results from a specific country. Must be a full country name (e.g., 'United States', 'Japan', 'Germany'). ISO country codes (e.g., 'us', 'jp') are not supported. Available only if topic is general. See https://docs.tavily.com/documentation/api-reference/search for the full list of supported countries.",
+      default: "",
+    },
+    include_favicon: {
+      type: "boolean",
+      description: "Whether to include the favicon URL for each result",
+      default: false,
+    },
+    exact_match: {
+      type: "boolean",
+      description: "Only return results containing the exact phrase(s) in quotes in your query",
+    },
+  },
+  required: ["query"],
 };
 
 interface TavilyResponse {
@@ -395,91 +485,12 @@ export class TavilyClient {
         {
           name: "tavily_search",
           description: this.getToolDescription("tavily_search", TAVILY_SEARCH_DESCRIPTION),
-          inputSchema: {
-            type: "object",
-            properties: {
-              query: {
-                type: "string",
-                description: "Search query",
-              },
-              search_depth: {
-                type: "string",
-                enum: ["basic", "advanced", "fast", "ultra-fast"],
-                description: "The depth of the search. 'basic' for generic results, 'advanced' for more thorough search, 'fast' for optimized low latency with high relevance, 'ultra-fast' for prioritizing latency above all else",
-                default: "basic",
-              },
-              topic: {
-                type: "string",
-                enum: ["general"],
-                description: "The category of the search. This will determine which of our agents will be used for the search",
-                default: "general",
-              },
-              time_range: {
-                type: "string",
-                description: "The time range back from the current date to include in the search results",
-                enum: ["day", "week", "month", "year"],
-              },
-              start_date: {
-                type: "string",
-                description: "Will return all results after the specified start date. Required to be written in the format YYYY-MM-DD.",
-                default: "",
-              },
-              end_date: {
-                type: "string",
-                description: "Will return all results before the specified end date. Required to be written in the format YYYY-MM-DD",
-                default: "",
-              },
-              max_results: {
-                type: "number",
-                description: "The maximum number of search results to return",
-                default: 5,
-                minimum: 5,
-                maximum: 20,
-              },
-              include_images: {
-                type: "boolean",
-                description: "Include a list of query-related images in the response",
-                default: false,
-              },
-              include_image_descriptions: {
-                type: "boolean",
-                description: "Include a list of query-related images and their descriptions in the response",
-                default: false,
-              },
-              include_raw_content: {
-                type: "boolean",
-                description: "Include the cleaned and parsed HTML content of each search result",
-                default: false,
-              },
-              include_domains: {
-                type: "array",
-                items: { type: "string" },
-                description: "A list of domains to specifically include in the search results, if the user asks to search on specific sites set this to the domain of the site",
-                default: [],
-              },
-              exclude_domains: {
-                type: "array",
-                items: { type: "string" },
-                description: "List of domains to specifically exclude, if the user asks to exclude a domain set this to the domain of the site",
-                default: [],
-              },
-              country: {
-                type: "string",
-                description: "Boost search results from a specific country. Must be a full country name (e.g., 'United States', 'Japan', 'Germany'). ISO country codes (e.g., 'us', 'jp') are not supported. Available only if topic is general. See https://docs.tavily.com/documentation/api-reference/search for the full list of supported countries.",
-                default: "",
-              },
-              include_favicon: {
-                type: "boolean",
-                description: "Whether to include the favicon URL for each result",
-                default: false,
-              },
-              exact_match: {
-                type: "boolean",
-                description: "Only return results containing the exact phrase(s) in quotes in your query",
-              },
-            },
-            required: ["query"],
-          },
+          inputSchema: TAVILY_SEARCH_INPUT_SCHEMA,
+        },
+        {
+          name: "tavily_search_packet",
+          description: this.getToolDescription("tavily_search_packet", TAVILY_SEARCH_PACKET_DESCRIPTION),
+          inputSchema: TAVILY_SEARCH_INPUT_SCHEMA,
         },
         {
           name: "tavily_extract",
@@ -640,28 +651,16 @@ export class TavilyClient {
 
         switch (request.params.name) {
           case "tavily_search":
-            if (args.country) {
-              args.topic = "general";
-            }
-
-            response = await this.search({
-              query: args.query,
-              search_depth: args.search_depth,
-              topic: args.topic,
-              time_range: args.time_range,
-              max_results: args.max_results,
-              include_images: args.include_images,
-              include_image_descriptions: args.include_image_descriptions,
-              include_raw_content: args.include_raw_content,
-              include_domains: Array.isArray(args.include_domains) ? args.include_domains : [],
-              exclude_domains: Array.isArray(args.exclude_domains) ? args.exclude_domains : [],
-              country: args.country,
-              include_favicon: args.include_favicon,
-              start_date: args.start_date,
-              end_date: args.end_date,
-              exact_match: args.exact_match,
-            });
+            response = await this.search(this.buildSearchParams(args));
             break;
+
+          case "tavily_search_packet":
+            return {
+              content: [{
+                type: "text",
+                text: await this.handleSearchPacketTool(args),
+              }],
+            };
 
           case "tavily_extract":
             return {
@@ -782,6 +781,42 @@ export class TavilyClient {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error("Tavily MCP server running on stdio");
+  }
+
+  private buildSearchParams(args: any): any {
+    if (args.country) {
+      args.topic = "general";
+    }
+
+    return {
+      query: args.query,
+      search_depth: args.search_depth,
+      topic: args.topic,
+      time_range: args.time_range,
+      max_results: args.max_results,
+      include_images: args.include_images,
+      include_image_descriptions: args.include_image_descriptions,
+      include_raw_content: args.include_raw_content,
+      include_domains: Array.isArray(args.include_domains) ? args.include_domains : [],
+      exclude_domains: Array.isArray(args.exclude_domains) ? args.exclude_domains : [],
+      country: args.country,
+      include_favicon: args.include_favicon,
+      start_date: args.start_date,
+      end_date: args.end_date,
+      exact_match: args.exact_match,
+    };
+  }
+
+  async handleSearchPacketTool(args: any): Promise<string> {
+    const response = await this.search(this.buildSearchParams(args));
+    const formatted = formatResults(response);
+    if (!this.isSourcePacketEnabled()) return formatted;
+
+    try {
+      return await this.pennyroyalHelper.sourcePacket(buildSourcePacketPayload(response, args, this.pennyroyalConfig.sourcePacket.maxInputTokens));
+    } catch (error: any) {
+      return `${formatted}\n\npennyroyal source_packet failed open: ${error.message || String(error)}`;
+    }
   }
 
   async handleExtractTool(args: any): Promise<string> {
@@ -1152,6 +1187,10 @@ function listTools(): void {
     {
       name: "tavily_search",
       description: config.toolDescriptions.tavily_search || TAVILY_SEARCH_DESCRIPTION,
+    },
+    {
+      name: "tavily_search_packet",
+      description: config.toolDescriptions.tavily_search_packet || TAVILY_SEARCH_PACKET_DESCRIPTION,
     },
     {
       name: "tavily_extract",

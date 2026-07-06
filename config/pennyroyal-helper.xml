@@ -9,6 +9,10 @@
       Advanced Tavily web search for second-opinion search, deeper source discovery, and Tavily-specific search controls. Use when Serper results are thin or ambiguous, when another search source would improve confidence, or when the user asks for Tavily.
     </tool>
 
+    <tool name="tavily_search_packet">
+      Runs Tavily search and routes the combined returned search results through the Pennyroyal sourcePacket helper. Use when you need a synthesized, source-packet-style evidence packet from search-discovered sources instead of raw Tavily snippets. For raw Tavily output, use tavily_search.
+    </tool>
+
     <tool name="tavily_extract">
       Preferred deeper known-webpage extraction for source-packet workflows. Use when the model needs query-aware extraction, reduced boilerplate, relevant chunks, or cleaner evidence from a known URL. Do not use for file-like URLs that the local workstation can inspect.
     </tool>
@@ -18,7 +22,7 @@
     <enableThinking>true</enableThinking>
     <timeoutSeconds>180</timeoutSeconds>
     <maxInputTokens>80000</maxInputTokens>
-    <maxOutputTokens>16000</maxOutputTokens>
+    <maxOutputTokens>20000</maxOutputTokens>
     <promptFile>prompts/source_packet.md</promptFile>
   </sourcePacket>
 </pennyroyalHelper>

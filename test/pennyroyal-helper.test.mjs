@@ -19,6 +19,7 @@ function configXml({ enabled = 'true', sourceEnabled = 'true', enableThinking = 
     <failOpen>true</failOpen>
     <toolDescriptions>
       <tool name="tavily_search">XML search description</tool>
+      <tool name="tavily_search_packet">XML search packet description</tool>
       <tool name="tavily_extract">XML extract description</tool>
     </toolDescriptions>
     <sourcePacket enabled="${sourceEnabled}">
@@ -67,10 +68,10 @@ test('invalid config disables helper and fails open', async () => {
 });
 
 
-test('default source_packet maxOutputTokens is 16000 and XML override still works', async () => {
+test('default source_packet maxOutputTokens is 20000 and XML override still works', async () => {
   const { loadPennyroyalConfig } = await import(modulePath);
   const cfg = loadPennyroyalConfig('/tmp/definitely-missing-pennyroyal.xml');
-  assert.equal(cfg.sourcePacket.maxOutputTokens, 16000);
+  assert.equal(cfg.sourcePacket.maxOutputTokens, 20000);
 
   const dir = tempDir();
   const file = path.join(dir, 'helper.xml');
@@ -147,6 +148,7 @@ test('tool description XML overrides work while defaults remain available', asyn
   writeFileSync(file, configXml({ enabled: 'false', sourceEnabled: 'false' }));
   const cfg = loadPennyroyalConfig(file);
   assert.equal(cfg.toolDescriptions.tavily_search, 'XML search description');
+  assert.equal(cfg.toolDescriptions.tavily_search_packet, 'XML search packet description');
   assert.equal(cfg.toolDescriptions.tavily_extract, 'XML extract description');
   rmSync(dir, { recursive: true, force: true });
 });
@@ -188,6 +190,43 @@ test('tavily_extract uses source_packet when enabled', async () => {
   assert.equal(text, 'SOURCE PACKET\npacket');
   server.close();
   rmSync(dir, { recursive: true, force: true });
+});
+
+
+test('tavily_search_packet uses source_packet while tavily_search remains raw', async () => {
+  const { TavilyClient, loadPennyroyalConfig, PennyroyalHelperClient, formatResults } = await import(modulePath);
+  const dir = tempDir();
+  mkdirSync(path.join(dir, 'prompts'));
+  writeFileSync(path.join(dir, 'prompts/source_packet.md'), 'prompt');
+  let helperBody;
+  const server = http.createServer((req, res) => {
+    req.on('data', c => helperBody = (helperBody || '') + c);
+    req.on('end', () => res.end(JSON.stringify({ choices: [{ message: { content: 'SEARCH SOURCE PACKET' } }] })));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const cfgFile = path.join(dir, 'helper.xml');
+    writeFileSync(cfgFile, configXml({ endpoint: `http://127.0.0.1:${server.address().port}/v1/chat/completions` }));
+    const client = new TavilyClient();
+    client.pennyroyalConfig = loadPennyroyalConfig(cfgFile);
+    client.pennyroyalHelper = new PennyroyalHelperClient(client.pennyroyalConfig, dir);
+    client.axiosInstance = { post: async () => ({ data: { query: 'packet query', results: [{ title: 'T', url: 'https://example.com', content: 'content', raw_content: 'raw content', score: 1 }] } }) };
+
+    const rawResponse = await client.search(client.buildSearchParams({ query: 'packet query', include_raw_content: true }));
+    assert.match(formatResults(rawResponse), /Detailed Results:/);
+    assert.equal(helperBody, undefined);
+
+    const text = await client.handleSearchPacketTool({ query: 'packet query', include_raw_content: true });
+    assert.equal(text, 'SEARCH SOURCE PACKET');
+    const parsed = JSON.parse(helperBody);
+    const payload = JSON.parse(parsed.messages[1].content);
+    assert.equal(payload.query, 'packet query');
+    assert.equal(payload.sources[0].url, 'https://example.com');
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('source packet helper failure returns formatted extract output with warning', async () => {
