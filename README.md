@@ -230,6 +230,22 @@ export TAVILY_INCLUDE_RAW_CONTENT=true
 
 The default is `false`.
 
+## Optional Pennyroyal Source-Packet Helper
+
+The Pennyroyal helper is **disabled by default**. When enabled through XML configuration, it applies only to `tavily_extract` and can turn Tavily extraction output into a compact evidence/source packet. It does not create a service, queue, or shared package, and it does not receive main chat history.
+
+Configuration is read from `config/pennyroyal-helper.xml` by default. Override that path with:
+
+```bash
+export TAVILY_PENNYROYAL_HELPER_CONFIG=/path/to/pennyroyal-helper.xml
+```
+
+The default helper endpoint is `http://127.0.0.1:8001/v1/chat/completions`, and the default model is `pennyroyal`. The request is OpenAI-compatible, non-streaming, stateless, and uses `prompts/source_packet.md` as the source-packet system prompt. `sourcePacket` defaults to normal thinking behavior (`<enableThinking>true</enableThinking>`); only explicit `<enableThinking>false</enableThinking>` adds request-side `chat_template_kwargs: {"enable_thinking": false}`.
+
+Source-packet behavior is fail-open: if the helper config is missing or invalid, the prompt file is missing, the helper times out, returns malformed output, rejects a field, or otherwise errors, `tavily_extract` returns the normal formatted Tavily extraction output with a visible warning. Search, crawl, map, and research tools are not changed by source-packet settings.
+
+File-like URLs such as `.pdf`, `.csv`, `.xlsx`, `.docx`, `.pptx`, archives, and images are guarded before Tavily or the helper are called. `tavily_extract` returns local workstation instructions for those URLs instead of sending them to Tavily extract or Pennyroyal.
+
 ## Identifying the End User (Optional)
 
 You can optionally identify the end user on whose behalf requests are being made by setting the `TAVILY_HUMAN_ID` environment variable. When set, Tavily MCP forwards it as the `X-Human-Id` header on every API call, enabling per-user analytics.
