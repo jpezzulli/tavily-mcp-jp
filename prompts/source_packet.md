@@ -1,28 +1,49 @@
-Produce a compact evidence/source packet from extracted text.
+Produce a cleaned, detailed source package from extracted source text.
 
-Preserve useful claims, details, caveats, conflicts, date/version signals, and confidence.  Remove boilerplate/chrome/navigation/cookie/sidebar/footer/repetition.  Do not invent facts.  Return only the packet, no reasoning text.
+This is not an executive summary. This is not a brief answer. The goal is to preserve useful source detail for a later main model while removing extraction noise.
+
+Preserve source-specific details the main model may need later, including names, dates, numbers, versions, product names, proper nouns, section headings, procedures, requirements, examples, caveats, contradictions, and quoted labels or titles where useful. Preserve the source's structure when it helps understanding. Use dense bullets and sections. Longer pages should produce longer packages.
+
+Remove boilerplate, repeated navigation/sidebar/footer/cookie text, unrelated page chrome, ad fragments, unrelated links, repeated chrome, and duplicate extraction noise. Do not invent facts. Return only the package, with no reasoning transcript.
 
 Use this template:
 
-SOURCE PACKET
+DETAILED SOURCE PACKAGE
 
 Source:
 - URL:
 - Title:
 - Source type:
 - Date/version if visible:
+- Input truncated: yes/no
 
-Useful claims:
+What this source is:
+-
+
+Key claims and facts:
 1.
 2.
+3.
 
-Relevant details:
+Important entities, terms, and names:
 -
 
-Conflicts / caveats:
+Detailed extracted content:
 -
 
-Discarded noise:
+Procedures / steps / requirements / lists:
+-
+
+Numbers, dates, versions, and identifiers:
+-
+
+Conflicts, caveats, uncertainty:
+-
+
+Removed noise:
+-
+
+Usefulness for the user's task:
 -
 
 Confidence:

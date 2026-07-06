@@ -67,7 +67,7 @@ const DEFAULT_PENNYROYAL_CONFIG: PennyroyalConfig = {
     enableThinking: true,
     timeoutSeconds: 180,
     maxInputTokens: 80000,
-    maxOutputTokens: 6000,
+    maxOutputTokens: 16000,
     promptFile: "prompts/source_packet.md",
   },
 };
@@ -129,7 +129,7 @@ export function loadPennyroyalConfig(configPath = process.env.TAVILY_PENNYROYAL_
       config.sourcePacket.enableThinking = boolValue(xmlText(body, "enableThinking"), true);
       config.sourcePacket.timeoutSeconds = numberValue(xmlText(body, "timeoutSeconds"), 180);
       config.sourcePacket.maxInputTokens = numberValue(xmlText(body, "maxInputTokens"), 80000);
-      config.sourcePacket.maxOutputTokens = numberValue(xmlText(body, "maxOutputTokens"), 6000);
+      config.sourcePacket.maxOutputTokens = numberValue(xmlText(body, "maxOutputTokens"), 16000);
       config.sourcePacket.promptFile = xmlText(body, "promptFile") || config.sourcePacket.promptFile;
     }
     return config;
@@ -805,7 +805,7 @@ export class TavilyClient {
     if (!this.isSourcePacketEnabled()) return formatted;
 
     try {
-      return await this.pennyroyalHelper.sourcePacket(buildSourcePacketPayload(response, args));
+      return await this.pennyroyalHelper.sourcePacket(buildSourcePacketPayload(response, args, this.pennyroyalConfig.sourcePacket.maxInputTokens));
     } catch (error: any) {
       return `${formatted}\n\npennyroyal source_packet failed open: ${error.message || String(error)}`;
     }
@@ -1046,19 +1046,59 @@ export function formatResults(response: TavilyResponse): string {
   return output.join("\n");
 }
 
-export function buildSourcePacketPayload(response: TavilyResponse, args: any): any {
-  return {
+function boundSourceText(value: string, maxChars: number): { text: string; truncated: boolean } {
+  if (value.length <= maxChars) return { text: value, truncated: false };
+  return { text: value.slice(0, Math.max(0, maxChars)), truncated: true };
+}
+
+export function buildSourcePacketPayload(response: TavilyResponse, args: any, maxInputTokens = DEFAULT_PENNYROYAL_CONFIG.sourcePacket.maxInputTokens): any {
+  const maxPayloadChars = Math.max(1, maxInputTokens) * 4;
+  const sourceCount = Math.max(1, response.results.length);
+  const sourceTextBudget = Math.max(1, Math.floor((maxPayloadChars * 0.9) / sourceCount));
+
+  const payload = {
     query: typeof args.query === "string" ? args.query : response.query,
     urls: Array.isArray(args.urls) ? args.urls : [],
-    sources: response.results.map(result => ({
-      url: result.url,
-      title: result.title,
-      content: boundString(getDisplayContent(result) || "", 12000),
-      raw_content: shouldPrintRawContent(result) ? boundString(result.raw_content || "", 12000) : undefined,
-      published_date: result.published_date,
-      favicon: result.favicon,
-    })),
+    sources: response.results.map(result => {
+      const includeRaw = shouldPrintRawContent(result);
+      const rawInput = includeRaw ? result.raw_content || "" : "";
+      const contentInput = getDisplayContent(result) || "";
+      const contentBudget = includeRaw ? Math.max(1, Math.floor(sourceTextBudget / 2)) : sourceTextBudget;
+      const rawBudget = includeRaw ? Math.max(1, sourceTextBudget - contentBudget) : 0;
+      const content = boundSourceText(contentInput, contentBudget);
+      const rawContent = includeRaw ? boundSourceText(rawInput, rawBudget) : undefined;
+      const inputTruncated = content.truncated || rawContent?.truncated || false;
+
+      return {
+        url: result.url,
+        title: result.title,
+        content: content.text,
+        raw_content: rawContent?.text,
+        published_date: result.published_date,
+        favicon: result.favicon,
+        input_truncated: inputTruncated || undefined,
+        truncation_note: inputTruncated ? "source text was bounded before helper call" : undefined,
+      };
+    }),
   };
+
+  let serialized = JSON.stringify(payload);
+  if (serialized.length > maxPayloadChars) {
+    const scale = Math.max(0.1, maxPayloadChars / serialized.length);
+    for (const source of payload.sources) {
+      const content = boundSourceText(source.content || "", Math.max(1, Math.floor((source.content || "").length * scale)));
+      source.content = content.text;
+      if (source.raw_content) {
+        const rawContent = boundSourceText(source.raw_content, Math.max(1, Math.floor(source.raw_content.length * scale)));
+        source.raw_content = rawContent.text;
+      }
+      source.input_truncated = true;
+      source.truncation_note = "source text was bounded before helper call";
+    }
+    serialized = JSON.stringify(payload);
+  }
+
+  return payload;
 }
 
 function formatCrawlResults(response: TavilyCrawlResponse): string {

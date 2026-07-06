@@ -66,6 +66,50 @@ test('invalid config disables helper and fails open', async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+
+test('default source_packet maxOutputTokens is 16000 and XML override still works', async () => {
+  const { loadPennyroyalConfig } = await import(modulePath);
+  const cfg = loadPennyroyalConfig('/tmp/definitely-missing-pennyroyal.xml');
+  assert.equal(cfg.sourcePacket.maxOutputTokens, 16000);
+
+  const dir = tempDir();
+  const file = path.join(dir, 'helper.xml');
+  writeFileSync(file, configXml());
+  const overridden = loadPennyroyalConfig(file);
+  assert.equal(overridden.sourcePacket.maxOutputTokens, 64);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('source packet payload uses maxInputTokens budget instead of fixed 12000 characters', async () => {
+  const { buildSourcePacketPayload } = await import(modulePath);
+  const longText = 'a'.repeat(20000);
+  const largeBudget = buildSourcePacketPayload({ query: 'q', results: [{ title: 'T', url: 'https://example.com', content: longText, score: 1 }] }, { urls: ['https://example.com'] }, 8000);
+  assert.equal(largeBudget.sources[0].content.length, 20000);
+  assert.equal(largeBudget.sources[0].input_truncated, undefined);
+
+  const smallBudget = buildSourcePacketPayload({ query: 'q', results: [{ title: 'T', url: 'https://example.com', content: longText, score: 1 }] }, { urls: ['https://example.com'] }, 1000);
+  assert.ok(smallBudget.sources[0].content.length < 12000);
+  assert.equal(smallBudget.sources[0].input_truncated, true);
+  assert.equal(smallBudget.sources[0].truncation_note, 'source text was bounded before helper call');
+});
+
+test('source packet payload divides maxInputTokens budget across multiple sources', async () => {
+  const { buildSourcePacketPayload } = await import(modulePath);
+  const longText = 'b'.repeat(10000);
+  const payload = buildSourcePacketPayload({
+    query: 'q',
+    results: [
+      { title: 'T1', url: 'https://example.com/1', content: longText, score: 1 },
+      { title: 'T2', url: 'https://example.com/2', content: longText, score: 1 },
+    ],
+  }, { urls: ['https://example.com/1', 'https://example.com/2'] }, 1000);
+
+  assert.ok(payload.sources[0].content.length <= 1800);
+  assert.ok(payload.sources[1].content.length <= 1800);
+  assert.equal(payload.sources[0].input_truncated, true);
+  assert.equal(payload.sources[1].truncation_note, 'source text was bounded before helper call');
+});
+
 test('absolute config under repo-like config dir resolves relative promptFile from repo root', async () => {
   const { loadPennyroyalConfig, PennyroyalHelperClient } = await import(modulePath);
   const repo = tempDir();
