@@ -18,7 +18,7 @@
     <enableThinking>true</enableThinking>
     <timeoutSeconds>180</timeoutSeconds>
     <maxInputTokens>80000</maxInputTokens>
-    <maxOutputTokens>6000</maxOutputTokens>
+    <maxOutputTokens>16000</maxOutputTokens>
     <promptFile>prompts/source_packet.md</promptFile>
   </sourcePacket>
 </pennyroyalHelper>
