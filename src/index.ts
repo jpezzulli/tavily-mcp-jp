@@ -21,7 +21,8 @@ const HUMAN_ID = process.env.TAVILY_HUMAN_ID;
 const SESSION_ID = randomUUID();
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_ROOT = path.resolve(MODULE_DIR, "..");
-const DEFAULT_PENNYROYAL_CONFIG_PATH = "config/pennyroyal-helper.xml";
+const LIVE_PENNYROYAL_CONFIG_PATH = "config/pennyroyal-helper.xml";
+const DEFAULT_PENNYROYAL_CONFIG_PATH = "config/pennyroyal-helper.default.xml";
 const DEFAULT_PENNYROYAL_ENDPOINT = "http://127.0.0.1:8001/v1/chat/completions";
 const DEFAULT_PENNYROYAL_MODEL = "pennyroyal";
 
@@ -105,9 +106,20 @@ function promptBaseDirForConfig(resolvedConfigPath: string): string {
   return path.basename(configDir) === "config" ? path.dirname(configDir) : configDir;
 }
 
-export function loadPennyroyalConfig(configPath = process.env.TAVILY_PENNYROYAL_HELPER_CONFIG || DEFAULT_PENNYROYAL_CONFIG_PATH): PennyroyalConfig {
+function defaultPennyroyalConfigPath(): string {
+  const livePath = resolvePennyroyalConfigPath(LIVE_PENNYROYAL_CONFIG_PATH);
+  if (existsSync(livePath)) return livePath;
+
+  const defaultPath = resolvePennyroyalConfigPath(DEFAULT_PENNYROYAL_CONFIG_PATH);
+  if (existsSync(defaultPath)) return defaultPath;
+
+  return livePath;
+}
+
+export function loadPennyroyalConfig(configPath?: string): PennyroyalConfig {
   const config = defaultPennyroyalConfig();
-  const resolvedPath = resolvePennyroyalConfigPath(configPath);
+  const configuredPath = configPath || process.env.TAVILY_PENNYROYAL_HELPER_CONFIG || defaultPennyroyalConfigPath();
+  const resolvedPath = resolvePennyroyalConfigPath(configuredPath);
   config.baseDir = promptBaseDirForConfig(resolvedPath);
   if (!existsSync(resolvedPath)) return config;
 

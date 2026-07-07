@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, renameSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -9,6 +9,22 @@ const modulePath = '../build/index.js';
 
 function tempDir() {
   return mkdtempSync(path.join(tmpdir(), 'tavily-pennyroyal-'));
+}
+
+function repoConfigPath(fileName) {
+  return path.resolve('config', fileName);
+}
+
+function withTemporarilyMovedFile(file, callback) {
+  const backup = `${file}.test-backup-${process.pid}`;
+  const existed = existsSync(file);
+  if (existed) renameSync(file, backup);
+  return Promise.resolve()
+    .then(callback)
+    .finally(() => {
+      if (existsSync(file)) rmSync(file, { force: true });
+      if (existed) renameSync(backup, file);
+    });
 }
 
 function configXml({ enabled = 'true', sourceEnabled = 'true', enableThinking = 'true', endpoint = 'http://127.0.0.1:1/v1/chat/completions', maxConcurrent = 2, promptFile = 'prompts/source_packet.md' } = {}) {
@@ -40,20 +56,54 @@ test('missing config means helper disabled and default descriptions exist', asyn
   assert.deepEqual(cfg.toolDescriptions, {});
 });
 
-test('default config resolves from package root, not process cwd', async () => {
+test('missing live config falls back to default XML from package root, not process cwd', async () => {
   const { loadPennyroyalConfig } = await import(modulePath);
   const dir = tempDir();
   const originalCwd = process.cwd();
+  await withTemporarilyMovedFile(repoConfigPath('pennyroyal-helper.xml'), async () => {
+    try {
+      process.chdir(dir);
+      const cfg = loadPennyroyalConfig();
+      assert.equal(cfg.enabled, false);
+      assert.match(cfg.toolDescriptions.tavily_extract, /Preferred deeper known-webpage extraction/);
+      assert.equal(path.basename(cfg.baseDir), 'tavily-mcp-jp');
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test('environment override wins over live and default XML paths', async () => {
+  const { loadPennyroyalConfig } = await import(modulePath);
+  const dir = tempDir();
+  const overrideFile = path.join(dir, 'override.xml');
+  const originalEnv = process.env.TAVILY_PENNYROYAL_HELPER_CONFIG;
   try {
-    process.chdir(dir);
+    writeFileSync(overrideFile, configXml({ endpoint: 'http://127.0.0.1:9999/v1/chat/completions' }));
+    process.env.TAVILY_PENNYROYAL_HELPER_CONFIG = overrideFile;
     const cfg = loadPennyroyalConfig();
-    assert.equal(cfg.enabled, false);
-    assert.match(cfg.toolDescriptions.tavily_extract, /Preferred deeper known-webpage extraction/);
-    assert.equal(path.basename(cfg.baseDir), 'tavily-mcp-jp');
+    assert.equal(cfg.endpoint, 'http://127.0.0.1:9999/v1/chat/completions');
+    assert.equal(cfg.sourcePacket.maxOutputTokens, 64);
   } finally {
-    process.chdir(originalCwd);
+    if (originalEnv === undefined) delete process.env.TAVILY_PENNYROYAL_HELPER_CONFIG;
+    else process.env.TAVILY_PENNYROYAL_HELPER_CONFIG = originalEnv;
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('missing live and default XML uses built-in defaults', async () => {
+  const { loadPennyroyalConfig } = await import(modulePath);
+  await withTemporarilyMovedFile(repoConfigPath('pennyroyal-helper.xml'), async () => {
+    await withTemporarilyMovedFile(repoConfigPath('pennyroyal-helper.default.xml'), async () => {
+      const cfg = loadPennyroyalConfig();
+      assert.equal(cfg.enabled, false);
+      assert.equal(cfg.sourcePacket.enabled, false);
+      assert.deepEqual(cfg.toolDescriptions, {});
+      assert.equal(cfg.sourcePacket.maxInputTokens, 80000);
+      assert.equal(cfg.sourcePacket.maxOutputTokens, 20000);
+    });
+  });
 });
 
 test('invalid config disables helper and fails open', async () => {

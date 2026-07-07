@@ -234,7 +234,13 @@ The default is `false`.
 
 The Pennyroyal helper is **disabled by default**. When enabled through XML configuration, it applies only to `tavily_extract` and can turn Tavily extraction output into a compact evidence/source packet. It does not create a service, queue, or shared package, and it does not receive main chat history.
 
-Configuration is read from `config/pennyroyal-helper.xml` by default. Override that path with:
+Configuration is read from `config/pennyroyal-helper.xml` by default. For local runtime use, copy the tracked default XML to the ignored live file and edit only the live file:
+
+```bash
+cp config/pennyroyal-helper.default.xml config/pennyroyal-helper.xml
+```
+
+`config/pennyroyal-helper.xml` is intentionally gitignored so repo updates do not overwrite operator runtime settings. If the live XML is missing, Tavily falls back to the tracked `config/pennyroyal-helper.default.xml`; if both files are missing, it uses built-in safe defaults. Override the path entirely with:
 
 ```bash
 export TAVILY_PENNYROYAL_HELPER_CONFIG=/path/to/pennyroyal-helper.xml
